@@ -1,0 +1,34 @@
+# Binaries and build outputs
+/api
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go tooling caches
+/tmp/
+.gocache/
+
+# Local development artifacts
+.air
+.DS_Store
+.idea/
+.vscode/
+*.sw?
+*.log
+
+# Environment files (keep examples)
+.env
+.env.*
+!.env.dev.example
+!.env.prod.example
+
+# Docker compose state
+/docker-data/
+
+# Coverage reports
+coverage.*

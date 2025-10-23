@@ -1,0 +1,112 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+
+	"qrmenu/internal/config"
+	"qrmenu/internal/handler"
+	"qrmenu/internal/middleware"
+	"qrmenu/internal/platform/cache"
+	"qrmenu/internal/platform/db"
+	"qrmenu/internal/platform/security"
+	"qrmenu/internal/repository"
+	"qrmenu/internal/transport/http"
+	"qrmenu/internal/usecase"
+)
+
+func main() {
+	var migrate bool
+	flag.BoolVar(&migrate, "migrate", false, "run DB migrations startup")
+	flag.Parse()
+
+	// Load config
+	cfg := config.Load()
+
+	// Force runtime TZ → Asia/Jakarta
+	if loc, err := time.LoadLocation("Asia/Jakarta"); err == nil {
+		time.Local = loc
+	}
+
+	// Connect DB
+	gdb := db.Connect(cfg)
+
+	// Auto migrate & seed admin
+	if migrate {
+		log.Println("DB migrations are managed externally via golang-migrate.")
+		return
+	}
+
+	// Connect Redis
+	rc := cache.NewRedis(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	defaultTTL := time.Duration(cfg.Redis.TTLSeconds) * time.Second
+
+	// ===== Repositories =====
+	adminRepo := repository.NewAdminRepository(gdb)
+	tenantRepo := repository.NewTenantRepository(gdb)
+	_ = tenantRepo
+	tableRepo := repository.NewTableRepository(gdb)
+	catRepo := repository.NewCategoryRepository(gdb)
+	itemRepo := repository.NewItemRepository(gdb)
+	optRepo := repository.NewOptionRepository(gdb)
+	orderRepo := repository.NewOrderRepository(gdb)
+	menuQuery := repository.NewMenuQuery(gdb)
+
+	// ===== Security / JWT =====
+	jwtMaker := security.NewJWT(cfg.JWTSecret, cfg.JWTExpiresMinute)
+
+	// ===== Usecases =====
+	setupUC := usecase.NewSetupUC(adminRepo, tenantRepo, jwtMaker)
+	authUC := usecase.NewAuthUC(adminRepo, jwtMaker)
+	menuUC := usecase.NewMenuUC(menuQuery, rc, defaultTTL)
+	tableUC := usecase.NewTableUC(tableRepo)
+	orderUC := usecase.NewOrderUC(orderRepo)
+	adminMenuUC := usecase.NewAdminMenuUC(catRepo, itemRepo, optRepo)
+	adminOrdersUC := usecase.NewAdminOrdersUC(orderRepo)
+
+	// ===== Handlers =====
+	setupH := handler.NewSetupHandler(setupUC)
+	authH := handler.NewAuthHandler(authUC, cfg.IsProd())
+	menuH := handler.NewMenuHandler(menuUC)
+	tableH := handler.NewTableHandler(tableUC)
+	orderPubH := handler.NewOrderPublicHandler(orderUC)
+
+	// UC → adapter (service) → handler (untuk Admin Menu)
+	adminMenuSvc := handler.NewAdminMenuServiceFromUC(adminMenuUC)
+	adminMenuH := handler.NewAdminMenuHandler(adminMenuSvc)
+
+	// Admin Orders handler langsung pakai UC
+	adminOrdersH := handler.NewAdminOrdersHandler(adminOrdersUC)
+
+	// ===== Fiber app =====
+	app := fiber.New(fiber.Config{
+		AppName:       cfg.AppName,
+		CaseSensitive: true,
+		StrictRouting: true,
+	})
+
+	// Global middlewares (CORS, Recover, Logger)
+	middleware.RegisterHTTP(app, cfg.AllowedOrigins)
+
+	// ===== Routes =====
+	http.Register(app, http.Deps{
+		Auth:      authH,
+		Menu:      menuH,
+		Table:     tableH,
+		OrderPub:  orderPubH,
+		AdminMenu: adminMenuH,
+		AdminOrd:  adminOrdersH,
+		Setup:     setupH,
+		JWTSecret: cfg.JWTSecret,
+	})
+	handler.RegisterSwaggerUI(app)
+
+	// Start
+	addr := fmt.Sprintf(":%s", cfg.AppPort)
+	log.Printf("🚀 %s running on %s (env=%s, tz=%s)", cfg.AppName, addr, cfg.AppEnv, time.Now().Location())
+	log.Fatal(app.Listen(addr))
+}

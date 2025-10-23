@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS item_option_values;
+DROP TABLE IF EXISTS item_options;
+DROP TABLE IF EXISTS items;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS tables;
+DROP TABLE IF EXISTS admin_users;
+DROP TABLE IF EXISTS tenants;

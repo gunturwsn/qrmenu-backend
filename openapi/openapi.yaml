@@ -1,0 +1,686 @@
+openapi: 3.1.0
+info:
+  title: QRMenu API - MVP v1.2 (Reconciled with ERD/BRD)
+  version: 1.2.0
+  description: |
+    This version aligns endpoints & schemas with the ERD:
+    - CRUD full for categories & items
+    - Item options & option values endpoints
+    - Admin logout
+    - QR generation for tables
+    - OOS toggle and flags carried through menu payload
+    - Updated version including Setup endpoints for first-time initialization.
+servers:
+  # - url: https://api.example.com
+  # - url: http://localhost:8080
+  - url: /
+
+tags:
+  - name: Setup
+    description: Initial one-time setup for first admin and tenant
+  - name: Public
+  - name: Admin
+  - name: Menu
+  - name: Orders
+  - name: Tables
+
+components:
+  securitySchemes:
+    AdminCookieAuth:
+      type: apiKey
+      in: cookie
+      name: admin_token
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    Tenant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        logo_url: { type: string, format: uri, nullable: true }
+        theme: { type: object, additionalProperties: true, nullable: true }
+
+    Table:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        token: { type: string }
+        is_active: { type: boolean }
+
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        sort: { type: integer }
+        is_active: { type: boolean }
+
+    Item:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        price: { type: integer, description: "IDR" }
+        photo_url: { type: string, format: uri, nullable: true }
+        flags:
+          type: object
+          additionalProperties: true
+        is_active: { type: boolean }
+
+    ItemOption:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        item_id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string, enum: [size, addon, level] }
+        required: { type: boolean }
+
+    ItemOptionValue:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        option_id: { type: string, format: uuid }
+        label: { type: string }
+        delta_price: { type: integer }
+
+    OrderStatus:
+      type: string
+      enum: [waiting, processing, delivering, done, canceled]
+
+    PaidStatus:
+      type: string
+      enum: [unpaid, paid]
+
+    OrderItemCreate:
+      type: object
+      properties:
+        item_id: { type: string, format: uuid }
+        qty: { type: integer, minimum: 1 }
+        options:
+          type: object
+          additionalProperties: true
+      required: [item_id, qty]
+
+    OrderCreateRequest:
+      type: object
+      properties:
+        tenant: { type: string, description: "Tenant code" }
+        table_token: { type: string }
+        guest_session_id: { type: string }
+        note: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItemCreate" }
+      required: [tenant, table_token, guest_session_id, items]
+
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        item_id: { type: string, format: uuid }
+        name: { type: string }
+        qty: { type: integer }
+        unit_price: { type: integer }
+        options:
+          type: object
+          additionalProperties: true
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        table_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        paid_status: { $ref: "#/components/schemas/PaidStatus" }
+        note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+
+    OrdersPaged:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        next_cursor: { type: string, nullable: true }
+
+    MenuResponse:
+      type: object
+      properties:
+        tenant: { type: string }
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/Category" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags: [Public]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+
+  /setup/status:
+    get:
+      tags: [Setup]
+      summary: Check initialization status per tenant
+      parameters:
+        - in: query
+          name: tenant_code
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scope: { type: string, enum: [tenant] }
+                  initialized: { type: boolean }
+                  tenant: { type: string }
+
+  /setup/admin:
+    post:
+      tags: [Setup]
+      summary: Initialize a tenant & create its first admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_code, email, password]
+              properties:
+                tenant_code: { type: string }
+                tenant_name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "403":
+          description: Tenant already initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/table/{token}:
+    get:
+      summary: Resolve table token to tenant & table
+      tags: [Public, Tables]
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Table & tenant info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant: { $ref: "#/components/schemas/Tenant" }
+                  table: { $ref: "#/components/schemas/Table" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/menu:
+    get:
+      summary: Get menu by tenant code (categories + items)
+      tags: [Public, Menu]
+      parameters:
+        - in: query
+          name: tenant_code
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Menu payload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MenuResponse" }
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/orders:
+    post:
+      summary: Create a guest order
+      tags: [Public, Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id: { type: string, format: uuid }
+                  status: { $ref: "#/components/schemas/OrderStatus" }
+
+  /auth/login:
+    post:
+      summary: Admin login (sets HttpOnly cookie)
+      tags: [Admin]
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+
+  /auth/logout:
+    post:
+      summary: Admin logout (clear cookie)
+      tags: [Admin]
+      security: [{ AdminCookieAuth: [] }]
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+
+  /admin/orders:
+    get:
+      summary: List orders (admin)
+      tags: [Admin, Orders]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Orders page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersPaged" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/orders/{id}/status:
+    patch:
+      summary: Update order status
+      tags: [Admin, Orders]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: "#/components/schemas/OrderStatus" }
+              required: [status]
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  /admin/categories:
+    get:
+      summary: List categories
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+    post:
+      summary: Create category
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                sort: { type: integer }
+                is_active: { type: boolean }
+              required: [name]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+
+  /admin/categories/{id}:
+    put:
+      summary: Replace category
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Category" }
+    patch:
+      summary: Update category (partial)
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      summary: Delete category
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/items:
+    get:
+      summary: List items
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: query
+          name: category_id
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Item" }
+    post:
+      summary: Create item
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category_id: { type: string, format: uuid }
+                name: { type: string }
+                description: { type: string }
+                price: { type: integer }
+                photo_url: { type: string, format: uri }
+                is_active: { type: boolean }
+              required: [category_id, name, price]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+
+  /admin/items/{id}:
+    put:
+      summary: Replace item
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Item" }
+    patch:
+      summary: Update item (partial)
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      summary: Delete item
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/items/{id}/oos:
+    patch:
+      summary: Toggle Out-of-Stock for item
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active: { type: boolean }
+              required: [is_active]
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+
+  /admin/items/{id}/options:
+    get:
+      summary: List item options
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ItemOption" }
+    post:
+      summary: Create item option
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [size, addon, level] }
+                required: { type: boolean }
+              required: [name, type]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemOption" }
+
+  /admin/options/{option_id}/values:
+    get:
+      summary: List option values
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: option_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ItemOptionValue" }
+    post:
+      summary: Create option value
+      tags: [Admin, Menu]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: option_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                delta_price: { type: integer }
+              required: [label]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemOptionValue" }
+
+  /admin/tables/{id}/qr:
+    post:
+      summary: Generate QR code for a table
+      tags: [Admin, Tables]
+      security: [{ AdminCookieAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Returns a presigned URL or inline image data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }

@@ -1,0 +1,33 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qrmenu-api
+    command: ["./api", "--migrate"]
+    ports:
+      - "8081:8080"
+    env_file: .env.prod # di server, isi lewat export/envfile rahasia
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks: [qrmenu_net]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: qrmenu-pg
+    environment:
+      POSTGRES_DB: qrmenu
+      POSTGRES_USER: qrmenu
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Jakarta
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks: [qrmenu_net]
+
+networks:
+  qrmenu_net:
+
+volumes:
+  pgdata:

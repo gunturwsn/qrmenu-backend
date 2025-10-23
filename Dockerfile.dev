@@ -1,0 +1,22 @@
+FROM golang:1.23.5-alpine
+WORKDIR /app
+
+RUN apk add --no-cache curl unzip git tzdata
+
+# deps Go
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# --- Install Air dari binary release (tanpa butuh Go 1.25) ---
+ARG AIR_VERSION=1.63.0
+# deteksi arsitektur builder
+RUN ARCH="$(uname -m)"; \
+    case "$ARCH" in \
+      x86_64) AIR_URL="https://github.com/cosmtrek/air/releases/download/v${AIR_VERSION}/air_${AIR_VERSION}_linux_amd64";; \
+      aarch64|arm64) AIR_URL="https://github.com/cosmtrek/air/releases/download/v${AIR_VERSION}/air_${AIR_VERSION}_linux_arm64";; \
+      *) echo "Unsupported arch: $ARCH" && exit 1;; \
+    esac; \
+    curl -L -o /usr/local/bin/air "$AIR_URL" && chmod +x /usr/local/bin/air
+
+CMD ["air", "-c", "air.toml"]

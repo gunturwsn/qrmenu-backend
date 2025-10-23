@@ -1,0 +1,16 @@
+# air.toml
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/bin/qrmenu ./cmd/api"
+bin = "./tmp/bin/qrmenu"
+include_ext = ["go"]
+exclude_dir = ["tmp", "migrations"]
+delay = 1000
+
+[log]
+time = true
+
+[env]
+PORT = "8080"

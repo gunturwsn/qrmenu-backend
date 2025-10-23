@@ -1,0 +1,279 @@
+openapi: 3.1.0
+info:
+  title: QRMenu API - Phase 2 (Accounts, History, Loyalty, Voucher)
+  version: 2.0.0
+  description: |
+    Extends MVP with customer auth (OTP/Magic Link), order history,
+    loyalty (points/stamp), vouchers, and redemption.
+servers:
+  # - url: https://api.example.com
+  # description: Production
+  - url: http://localhost:8080
+    description: Local Dev
+
+tags:
+  - name: Auth
+  - name: Customer
+  - name: Loyalty
+  - name: Voucher
+  - name: Orders
+
+components:
+  securitySchemes:
+    CustomerCookieAuth:
+      type: apiKey
+      in: cookie
+      name: cust_session
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+    OTPStartRequest:
+      type: object
+      properties:
+        target: { type: string, description: "phone or email" }
+        channel: { type: string, enum: [sms, wa, email] }
+      required: [target, channel]
+    OTPVerifyRequest:
+      type: object
+      properties:
+        target: { type: string }
+        code: { type: string }
+      required: [target, code]
+    CustomerProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        is_phone_verified: { type: boolean }
+        is_email_verified: { type: boolean }
+    LoyaltyWallet:
+      type: object
+      properties:
+        tenant_id: { type: string, format: uuid }
+        points: { type: integer }
+        stamps: { type: integer }
+        tier: { type: string, enum: [bronze, silver, gold], nullable: true }
+    Voucher:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        is_active: { type: boolean }
+        rule_jsonb:
+          type: object
+          additionalProperties: true
+    OrderSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        status: { type: string }
+        total_amount: { type: integer }
+    OrdersPaged:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/OrderSummary" }
+        next_cursor: { type: string, nullable: true }
+
+paths:
+  /auth/otp/start:
+    post:
+      summary: Start OTP/Magic Link auth
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OTPStartRequest" }
+      responses:
+        "200":
+          description: OTP issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/otp/verify:
+    post:
+      summary: Verify OTP/Magic Link and create session (cookie)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OTPVerifyRequest" }
+      responses:
+        "200":
+          description: Authenticated
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                description: HttpOnly cookie cust_session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "400":
+          description: Invalid OTP
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/logout:
+    post:
+      summary: Invalidate customer session
+      tags: [Auth]
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+
+  /me:
+    get:
+      summary: Get profile & lightweight wallet
+      tags: [Customer]
+      security: [{ CustomerCookieAuth: [] }]
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: { $ref: "#/components/schemas/CustomerProfile" }
+                  wallet:
+                    type: array
+                    items: { $ref: "#/components/schemas/LoyaltyWallet" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orders:
+    get:
+      summary: Customer's order history
+      tags: [Orders]
+      security: [{ CustomerCookieAuth: [] }]
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Orders page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersPaged" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /loyalty/wallet:
+    get:
+      summary: Loyalty wallet for current customer (per tenant)
+      tags: [Loyalty]
+      security: [{ CustomerCookieAuth: [] }]
+      parameters:
+        - in: query
+          name: tenant
+          required: true
+          schema: { type: string, description: "tenant code" }
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoyaltyWallet" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /vouchers/available:
+    get:
+      summary: List vouchers available to the customer
+      tags: [Voucher]
+      security: [{ CustomerCookieAuth: [] }]
+      parameters:
+        - in: query
+          name: tenant
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Available vouchers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Voucher" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /vouchers/redeem:
+    post:
+      summary: Redeem a voucher for an order
+      tags: [Voucher]
+      security: [{ CustomerCookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string }
+                order_id: { type: string, format: uuid }
+              required: [code, order_id]
+      responses:
+        "200":
+          description: Redeemed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  discount_amount: { type: integer }
+        "400":
+          description: Invalid or not applicable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }

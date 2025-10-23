@@ -1,0 +1,83 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: qrmenu-api-air
+    volumes:
+      - .:/app
+    env_file: .env.dev
+    environment:
+      # fallback kalau .env.dev belum di-set
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      DB_URL: ${DB_URL:-postgres://qrmenu:qrmenu@postgres:5432/qrmenu_dev?sslmode=disable}
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["air", "-c", "air.toml"]
+    restart: unless-stopped
+    networks:
+      - qrmenu_net
+
+  postgres:
+    image: postgres:16-alpine
+    # disarankan tanpa container_name supaya DNS compose rapi
+    environment:
+      POSTGRES_DB: qrmenu_dev
+      POSTGRES_USER: qrmenu
+      POSTGRES_PASSWORD: qrmenu
+      TZ: Asia/Jakarta
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qrmenu -d qrmenu_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - qrmenu_net
+
+  redis:
+    image: redis:7-alpine
+    # disarankan tanpa container_name
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - qrmenu_net
+
+  migrate:
+    image: migrate/migrate:latest
+    # biar container gak langsung exit; dipanggil via `docker compose run migrate ...`
+    entrypoint: ["/bin/sh", "-c", "sleep infinity"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: ${DB_URL:-postgres://qrmenu:qrmenu@postgres:5432/qrmenu_dev?sslmode=disable}
+    volumes:
+      - ./migrations:/migrations:ro
+    networks:
+      - qrmenu_net
+
+volumes:
+  pgdata_dev:
+    name: qrmenu-dev_pgdata_dev # ← kunci ke volume lama secara eksplisit
+    external: true # ← gunakan volume existing (tidak membuat baru)
+
+networks:
+  qrmenu_net:
+    driver: bridge
