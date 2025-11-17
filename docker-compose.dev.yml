@@ -1,5 +1,6 @@
 services:
   api:
+    platform: linux/arm64
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -11,6 +12,7 @@ services:
       # fallback kalau .env.dev belum di-set
       REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
       DB_URL: ${DB_URL:-postgres://qrmenu:qrmenu@postgres:5432/qrmenu_dev?sslmode=disable}
+      TZ: Asia/Jakarta
     ports:
       - "8081:8080"
     depends_on:
@@ -24,8 +26,8 @@ services:
       - qrmenu_net
 
   postgres:
+    platform: linux/arm64
     image: postgres:16-alpine
-    # disarankan tanpa container_name supaya DNS compose rapi
     environment:
       POSTGRES_DB: qrmenu_dev
       POSTGRES_USER: qrmenu
@@ -45,23 +47,27 @@ services:
       - qrmenu_net
 
   redis:
+    platform: linux/arm64
     image: redis:7-alpine
-    # disarankan tanpa container_name
+    # For fast & disk-saving dev: disable AOF/RDB, keep in memory
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
       - "6379:6379"
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "PING"]
       interval: 3s
       timeout: 3s
       retries: 10
+    # tmpfs speeds up I/O in Colima (redis dev data is not persistent)
+    tmpfs:
+      - /data
     restart: unless-stopped
     networks:
       - qrmenu_net
 
   migrate:
+    platform: linux/arm64
     image: migrate/migrate:latest
-    # biar container gak langsung exit; dipanggil via `docker compose run migrate ...`
     entrypoint: ["/bin/sh", "-c", "sleep infinity"]
     depends_on:
       postgres:
@@ -74,9 +80,7 @@ services:
       - qrmenu_net
 
 volumes:
-  pgdata_dev:
-    name: qrmenu-dev_pgdata_dev # ← kunci ke volume lama secara eksplisit
-    external: true # ← gunakan volume existing (tidak membuat baru)
+  pgdata_dev: {}
 
 networks:
   qrmenu_net:

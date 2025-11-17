@@ -8,7 +8,7 @@ type Item struct {
 	CategoryID  string            `json:"category_id"  db:"category_id"  gorm:"type:uuid;index"`
 	Name        string            `json:"name"         db:"name"         gorm:"not null"`
 	Description *string           `json:"description,omitempty" db:"description"`
-	Price       int64             `json:"price"        db:"price"`        // IDR (sen/cent optional)
+	Price       int64             `json:"price"        db:"price"`
 	PhotoURL    *string           `json:"photo_url,omitempty" db:"photo_url"`
 	Flags       datatypes.JSONMap `json:"flags,omitempty"     db:"flags"     gorm:"type:jsonb"`
 	IsActive    bool              `json:"is_active"    db:"is_active"     gorm:"default:true;index"`

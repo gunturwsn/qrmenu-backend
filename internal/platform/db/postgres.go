@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -22,8 +23,20 @@ func Connect(c *config.Config) *gorm.DB {
 		log.Fatalf("DB connection failed: %v", err)
 	}
 
-	// Optional: ping & set timezone pada session (bagus untuk verifikasi)
+	// Optional: ping and set timezone on the session to verify connectivity.
 	if sqlDB, err := gdb.DB(); err == nil {
+		if c.DBMaxIdleConns > 0 {
+			sqlDB.SetMaxIdleConns(c.DBMaxIdleConns)
+		}
+		if c.DBMaxOpenConns > 0 {
+			sqlDB.SetMaxOpenConns(c.DBMaxOpenConns)
+		}
+		if c.DBConnMaxLifeSec > 0 {
+			sqlDB.SetConnMaxLifetime(time.Duration(c.DBConnMaxLifeSec) * time.Second)
+		}
+		if c.DBConnMaxIdleSec > 0 {
+			sqlDB.SetConnMaxIdleTime(time.Duration(c.DBConnMaxIdleSec) * time.Second)
+		}
 		_ = sqlDB.Ping()
 	}
 	if err := gdb.Exec(`SET TIME ZONE 'Asia/Jakarta'`).Error; err != nil {
@@ -33,17 +46,17 @@ func Connect(c *config.Config) *gorm.DB {
 	return gdb
 }
 
-// Pastikan extension yang dibutuhkan ada (sekali jalan aman walau berulang)
+// Ensure required extensions exist (safe to call repeatedly).
 func EnsureExtensions(db *gorm.DB) {
 	_ = db.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto`).Error
-	// Jika di DB kamu pakai uuid-ossp: aktifkan juga
+	// Enable uuid-ossp as well if your deployment relies on it.
 	// _ = db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error
 }
 
 func AutoMigrate(db *gorm.DB) {
 	EnsureExtensions(db)
 
-	// Urutan aman (FK mengacu entity yang sudah ada)
+	// Order ensures foreign keys reference already-migrated entities.
 	err := db.AutoMigrate(
 		&domain.Tenant{},
 		&domain.Table{},
@@ -63,26 +76,26 @@ func AutoMigrate(db *gorm.DB) {
 		log.Fatalf("AutoMigrate failed: %v", err)
 	}
 
-	// (Opsional) set default timezone pada level database (berlaku untuk sesi baru)
-	// Aman dipanggil berulang
+	// Optionally set the database default timezone (applies to new sessions).
+	// Safe to call multiple times.
 	if derr := setDatabaseTimezone(db, "Asia/Jakarta"); derr != nil {
 		log.Printf("warn: failed to set DB default timezone: %v", derr)
 	}
 }
 
 func setDatabaseTimezone(db *gorm.DB, tz string) error {
-	// Mengatur default parameter untuk database ini, bukan hanya session saat ini
+	// Configure the default parameter for this database, not just the current session.
 	return db.Exec(fmt.Sprintf(`ALTER DATABASE %s SET TIME ZONE '%s'`, currentDBName(db), tz)).Error
 }
 
-// currentDBName membaca nama DB aktif dari koneksi *sql.DB.
+// currentDBName retrieves the active database name using the underlying *sql.DB.
 func currentDBName(gdb *gorm.DB) string {
 	sqlDB, err := gdb.DB()
 	if err != nil {
 		return ""
 	}
 	var name string
-	// cara portable: SELECT current_database();
+	// Portable approach: SELECT current_database();
 	_ = queryRow(sqlDB, `SELECT current_database()`).Scan(&name)
 	return name
 }

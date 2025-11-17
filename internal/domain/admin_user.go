@@ -8,7 +8,7 @@ type AdminUser struct {
 	Email        string    `json:"email"       db:"email"         gorm:"uniqueIndex;not null"`
 	PasswordHash string    `json:"-"           db:"password_hash" gorm:"not null"`
 	Name         string    `json:"name"        db:"name"`
-	Role         string    `json:"role"        db:"role"          gorm:"default:'staff'"` // owner|staff
+	Role         string    `json:"role"        db:"role"          gorm:"default:'staff'"`
 	IsActive     bool      `json:"is_active"   db:"is_active"     gorm:"default:true;index"`
 	CreatedAt    time.Time `json:"created_at"  db:"created_at"    gorm:"autoCreateTime"`
 }

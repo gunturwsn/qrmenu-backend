@@ -14,7 +14,7 @@ func SplitHostPort(addr string, defaultHost string, defaultPort int) (string, in
 	}
 
 	if strings.Count(addr, ":") == 0 {
-		// hanya host
+		// Only a host component was provided.
 		return addr, port
 	}
 

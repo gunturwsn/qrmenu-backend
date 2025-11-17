@@ -7,7 +7,7 @@ Backend service for the QRMenu platform. It exposes public APIs for guests to br
 - Admin endpoints (cookie-authenticated) for CRUD operations on categories, items, options, and orders.
 - Multi-tenant support with first-time setup flow for bootstrapping a tenant and its owner admin.
 - Redis-backed caching of menu payloads with invalidation helpers.
-- JWT-based admin session handling with Fiber middlewares (CORS, logging, recover, etc.).
+- JWT-based admin session handling with Fiber middlewares (CORS, structured logging with request IDs, recover, etc.).
 - Infrastructure-as-code via Docker Compose for local development, hot reload (Air), and migrations.
 
 ## Tech Stack
@@ -35,6 +35,11 @@ migrations         # SQL migration files (golang-migrate format)
 openapi            # OpenAPI spec
 ```
 
+The project follows a clean architecture approach:
+- Handlers (HTTP adapters) depend only on use case interfaces and translate domain objects into DTOs.
+- Use cases own business rules, returning domain entities without leaking HTTP concerns.
+- Repositories encapsulate persistence using GORM and expose domain models back to the core.
+
 ## Prerequisites
 - Go **1.23+**
 - Docker & Docker Compose
@@ -50,6 +55,8 @@ All environment variables used by the service live in `.env.dev` (local) and `.e
 | `APP_ALLOWED_ORIGINS` | CORS allow list (comma separated) | `http://localhost:3000,...` |
 | `DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | PostgreSQL connection | see `.env.dev` |
 | `DB_URL` | Full DSN used by the migration container | `postgres://...` |
+| `DB_MAX_OPEN_CONNS` / `DB_MAX_IDLE_CONNS` | DB connection pool sizes | `25` / `10` (dev) |
+| `DB_CONN_MAX_LIFETIME_SEC` / `DB_CONN_MAX_IDLE_TIME_SEC` | Connection lifetime tuning (seconds) | `600` / `300` (dev) |
 | `REDIS_ADDR` / `REDIS_DB` / `REDIS_TTL_SECONDS` | Redis connection + cache TTL | `redis:6379`, `0`, `300` |
 | `JWT_SECRET` / `JWT_EXPIRES_MINUTES` | Admin JWT signing config | required |
 | `SETUP_TOKEN` | Token for initial tenant setup flow | `my-super-secret-token` |

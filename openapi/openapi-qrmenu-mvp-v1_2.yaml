@@ -18,7 +18,7 @@ servers:
 tags:
   - name: Setup
     description: Initial one-time setup for first admin and tenant
-  - name: Public
+  - name: Customer
   - name: Admin
   - name: Menu
   - name: Orders
@@ -176,7 +176,7 @@ paths:
   /health:
     get:
       summary: Health check
-      tags: [Public]
+      tags: [Customer]
       responses:
         "200":
           description: OK
@@ -189,66 +189,52 @@ paths:
 
   /setup/status:
     get:
-      summary: Check if system already initialized
       tags: [Setup]
+      summary: Check initialization status per tenant
+      parameters:
+        - in: query
+          name: tenant_code
+          required: true
+          schema: { type: string }
       responses:
         "200":
-          description: Initialization status
+          description: OK
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  initialized:
-                    type: boolean
-                    description: true if admin user already exists
+                  scope: { type: string, enum: [tenant] }
+                  initialized: { type: boolean }
+                  tenant: { type: string }
 
   /setup/admin:
     post:
-      summary: Initialize system and create first admin + tenant
       tags: [Setup]
-      description: |
-        This endpoint can only be called **once** when there is no admin user in the system.
-        After the first admin is created, this endpoint will return **403 Forbidden**.
+      summary: Initialize a tenant & create its first admin
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password, tenant_code, tenant_name]
+              required: [tenant_code, email, password]
               properties:
-                email:
-                  type: string
-                  format: email
-                  example: admin@qrmenu.local
-                password:
-                  type: string
-                  minLength: 6
-                  example: admin123
-                tenant_code:
-                  type: string
-                  example: demo
-                tenant_name:
-                  type: string
-                  example: Demo Tenant
+                tenant_code: { type: string }
+                tenant_name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
       responses:
         "201":
-          description: Created first admin successfully
+          description: Created
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   ok: { type: boolean }
-        "400":
-          description: Bad request (missing field or validation error)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
         "403":
-          description: Forbidden (system already initialized)
+          description: Tenant already initialized
           content:
             application/json:
               schema:
@@ -257,7 +243,7 @@ paths:
   /api/v1/table/{token}:
     get:
       summary: Resolve table token to tenant & table
-      tags: [Public, Tables]
+      tags: [Customer, Tables]
       parameters:
         - in: path
           name: token
@@ -282,10 +268,10 @@ paths:
   /api/v1/menu:
     get:
       summary: Get menu by tenant code (categories + items)
-      tags: [Public, Menu]
+      tags: [Customer, Menu]
       parameters:
         - in: query
-          name: tenant
+          name: tenant_code
           required: true
           schema: { type: string }
       responses:
@@ -303,7 +289,7 @@ paths:
   /api/v1/orders:
     post:
       summary: Create a guest order
-      tags: [Public, Orders]
+      tags: [Customer, Orders]
       requestBody:
         required: true
         content:
@@ -323,16 +309,16 @@ paths:
   /auth/login:
     post:
       summary: Admin login (sets HttpOnly cookie)
-    tags: [Admin]
-    responses:
-      "200":
-        description: Logged in
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                ok: { type: boolean }
+      tags: [Admin]
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
 
   /auth/logout:
     post:

@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"qrmenu/internal/domain"
+	"qrmenu/internal/platform/logging"
 )
 
 type OrdersPage struct {
@@ -32,16 +33,19 @@ func NewOrderRepository(db *gorm.DB) OrderRepository { return &orderRepo{db: db}
 // - Creates order with WAITING & UNPAID status, then inserts items.
 func (r *orderRepo) CreateGuestOrder(req domain.OrderCreateRequest) (string, domain.OrderStatus, error) {
 	var orderID string
+	logging.RepoInfo("OrderRepository.CreateGuestOrder", "create guest order", "order_create_requested", "tenant", req.Tenant, "table_token", req.TableToken, "items", len(req.Items))
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		// Resolve tenant by code
 		var tenant domain.Tenant
 		if err := tx.Where("code = ?", req.Tenant).First(&tenant).Error; err != nil {
+			logging.RepoError("OrderRepository.CreateGuestOrder", "tenant lookup failed", "tenant_lookup_failed", err, "tenant_code", req.Tenant)
 			return err
 		}
 		// Resolve table by token within tenant
 		var table domain.Table
 		if err := tx.Where("token = ? AND tenant_id = ? AND is_active = TRUE", req.TableToken, tenant.ID).
 			First(&table).Error; err != nil {
+			logging.RepoError("OrderRepository.CreateGuestOrder", "table lookup failed", "table_lookup_failed", err, "tenant_id", tenant.ID, "table_token", req.TableToken)
 			return err
 		}
 
@@ -55,6 +59,7 @@ func (r *orderRepo) CreateGuestOrder(req domain.OrderCreateRequest) (string, dom
 			PaidStatus:   domain.Unpaid,
 		}
 		if err := tx.Create(&order).Error; err != nil {
+			logging.RepoError("OrderRepository.CreateGuestOrder", "order insert failed", "order_insert_failed", err, "tenant_id", tenant.ID)
 			return err
 		}
 		orderID = order.ID
@@ -64,6 +69,7 @@ func (r *orderRepo) CreateGuestOrder(req domain.OrderCreateRequest) (string, dom
 			var menuItem domain.Item
 			if err := tx.Where("id = ? AND tenant_id = ? AND is_active = TRUE", it.ItemID, tenant.ID).
 				First(&menuItem).Error; err != nil {
+				logging.RepoError("OrderRepository.CreateGuestOrder", "menu item lookup failed", "menu_item_lookup_failed", err, "tenant_id", tenant.ID, "item_id", it.ItemID)
 				return err
 			}
 			oi := domain.OrderItem{
@@ -77,13 +83,19 @@ func (r *orderRepo) CreateGuestOrder(req domain.OrderCreateRequest) (string, dom
 				oi.Options = datatypes.JSONMap(it.Options) // jsonb
 			}
 			if err := tx.Create(&oi).Error; err != nil {
+				logging.RepoError("OrderRepository.CreateGuestOrder", "order item insert failed", "order_item_insert_failed", err, "order_id", order.ID, "item_id", menuItem.ID)
 				return err
 			}
 		}
 
 		return nil
 	})
-	return orderID, domain.OrderWaiting, err
+	if err != nil {
+		logging.RepoError("OrderRepository.CreateGuestOrder", "transaction failed", "transaction_failed", err, "tenant", req.Tenant)
+		return orderID, domain.OrderWaiting, err
+	}
+	logging.RepoInfo("OrderRepository.CreateGuestOrder", "order created", "order_created", "order_id", orderID, "tenant", req.Tenant)
+	return orderID, domain.OrderWaiting, nil
 }
 
 // ListAdmin returns paginated orders for a tenant with optional status filter.
@@ -108,6 +120,7 @@ func (r *orderRepo) ListAdmin(tenantID, status, cursor string, limit int) (Order
 		Limit(limit + 1).
 		Preload("Items").
 		Find(&rows).Error; err != nil {
+		logging.RepoError("OrderRepository.ListAdmin", "query failed", "query_failed", err, "tenant_id", tenantID, "status", status)
 		return OrdersPage{}, err
 	}
 
@@ -119,6 +132,7 @@ func (r *orderRepo) ListAdmin(tenantID, status, cursor string, limit int) (Order
 		rows = rows[:limit]
 	}
 
+	logging.RepoInfo("OrderRepository.ListAdmin", "orders listed", "orders_listed", "tenant_id", tenantID, "status", status, "count", len(rows), "has_next", next != nil)
 	return OrdersPage{Data: rows, NextCursor: next}, nil
 }
 
@@ -127,14 +141,17 @@ func (r *orderRepo) UpdateStatus(tenantID, id string, status domain.OrderStatus)
 	if err := r.db.Model(&domain.Order{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Update("status", status).Error; err != nil {
+		logging.RepoError("OrderRepository.UpdateStatus", "update failed", "update_failed", err, "tenant_id", tenantID, "order_id", id, "status", status)
 		return nil, err
 	}
 	var o domain.Order
 	if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).
 		Preload("Items").
 		First(&o).Error; err != nil {
+		logging.RepoError("OrderRepository.UpdateStatus", "load failed", "load_failed", err, "tenant_id", tenantID, "order_id", id)
 		return nil, err
 	}
+	logging.RepoInfo("OrderRepository.UpdateStatus", "order updated", "order_updated", "tenant_id", tenantID, "order_id", id, "status", o.Status)
 	return &o, nil
 }
 

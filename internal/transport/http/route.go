@@ -9,37 +9,35 @@ import (
 )
 
 type Deps struct {
-	Auth       *handler.AuthHandler
-	Menu       *handler.MenuHandler
-	Table      *handler.TableHandler
-	OrderPub   *handler.OrderPublicHandler
-	AdminMenu  *handler.AdminMenuHandler
-	AdminOrd   *handler.AdminOrdersHandler
-	Setup      *handler.SetupHandler
-	JWTSecret  string
+	Auth      *handler.AuthHandler
+	Menu      *handler.MenuHandler
+	Table     *handler.TableHandler
+	OrderPub  *handler.OrderPublicHandler
+	AdminMenu *handler.AdminMenuHandler
+	AdminOrd  *handler.AdminOrdersHandler
+	Setup     *handler.SetupHandler
+	JWTSecret string
 }
 
 func Register(app *fiber.App, d Deps) {
-	// /health
-	// Pastikan kamu punya handler.Health() yang return fiber.Handler.
-	// Kalau belum, sementara bisa ganti jadi:
-	// app.Get("/health", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"status":"ok"}) })
+	// ---- Health (public) ----
+	// Ensure handler.Health() exists and returns a fiber.Handler.
 	app.Get("/health", handler.Health())
 
-	// ---- Setup (public, sekali pakai) ----
+	// ---- Setup (public) ----
 	app.Get("/setup/status", d.Setup.Status)
 	app.Post("/setup/admin", d.Setup.SetupTenant)
 
-	// Public
+	// ---- Public / Customer ----
 	app.Get("/api/v1/table/:token", d.Table.Resolve)
 	app.Get("/api/v1/menu", d.Menu.Get)
 	app.Post("/api/v1/orders", d.OrderPub.Create)
 
-	// Auth (cookie)
+	// ---- Auth (cookie) ----
 	app.Post("/auth/login", d.Auth.Login)
 	app.Post("/auth/logout", d.Auth.Logout)
 
-	// Admin (cookie protected)
+	// ---- Admin (cookie protected) ----
 	admin := app.Group("/admin", middleware.AdminCookieOnly(d.JWTSecret))
 
 	// Orders

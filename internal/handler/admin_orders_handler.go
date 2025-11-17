@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"errors"
 	"qrmenu/internal/domain"
+	"qrmenu/internal/platform/logging"
 	"qrmenu/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
@@ -28,8 +30,10 @@ func (h *AdminOrdersHandler) List(c *fiber.Ctx) error {
 
 	page, err := h.q.List(tenantID, status, cursor)
 	if err != nil {
+		logging.HandlerError(c, "AdminOrders.List", "query failed", fiber.StatusBadRequest, "orders_query_failed", err, "tenant_id", tenantID, "status", status, "cursor", cursor)
 		return fiber.ErrBadRequest
 	}
+	logging.HandlerInfo(c, "AdminOrders.List", "orders retrieved", fiber.StatusOK, "orders_listed", "tenant_id", tenantID, "status", status, "count", len(page.Data))
 	return c.JSON(page)
 }
 
@@ -41,13 +45,20 @@ func (h *AdminOrdersHandler) PatchStatus(c *fiber.Ctx) error {
 	var body struct {
 		Status string `json:"status"`
 	}
-	if err := c.BodyParser(&body); err != nil || body.Status == "" {
+	if err := c.BodyParser(&body); err != nil {
+		logging.HandlerError(c, "AdminOrders.PatchStatus", "failed to parse body", fiber.StatusBadRequest, "invalid_body", err, "tenant_id", tenantID, "order_id", id)
+		return fiber.ErrBadRequest
+	}
+	if body.Status == "" {
+		logging.HandlerError(c, "AdminOrders.PatchStatus", "status missing", fiber.StatusBadRequest, "status_missing", errors.New("status required"), "tenant_id", tenantID, "order_id", id)
 		return fiber.ErrBadRequest
 	}
 
 	ord, err := h.q.UpdateStatus(tenantID, id, body.Status)
 	if err != nil {
+		logging.HandlerError(c, "AdminOrders.PatchStatus", "update failed", fiber.StatusBadRequest, "order_status_update_failed", err, "tenant_id", tenantID, "order_id", id, "status", body.Status)
 		return fiber.ErrBadRequest
 	}
+	logging.HandlerInfo(c, "AdminOrders.PatchStatus", "status updated", fiber.StatusOK, "status_updated", "tenant_id", tenantID, "order_id", id, "status", body.Status)
 	return c.JSON(ord)
 }

@@ -18,6 +18,10 @@ type Config struct {
 	DBPassword       string
 	DBName           string
 	DBSSLMode        string
+	DBMaxOpenConns   int
+	DBMaxIdleConns   int
+	DBConnMaxLifeSec int
+	DBConnMaxIdleSec int
 	JWTSecret        string
 	JWTExpiresMinute int
 	AdminEmail       string
@@ -50,6 +54,10 @@ func Load() *Config {
 
 	rdDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
 	rdTTL, _ := strconv.Atoi(getEnv("REDIS_TTL_SECONDS", "300"))
+	dbMaxOpen, _ := strconv.Atoi(getEnv("DB_MAX_OPEN_CONNS", "25"))
+	dbMaxIdle, _ := strconv.Atoi(getEnv("DB_MAX_IDLE_CONNS", "10"))
+	dbLife, _ := strconv.Atoi(getEnv("DB_CONN_MAX_LIFETIME_SEC", "600"))
+	dbIdle, _ := strconv.Atoi(getEnv("DB_CONN_MAX_IDLE_TIME_SEC", "300"))
 
 	return &Config{
 		AppName:          getEnv("APP_NAME", "qrmenu"),
@@ -62,6 +70,10 @@ func Load() *Config {
 		DBPassword:       getEnv("DB_PASSWORD", "qrmenu"),
 		DBName:           getEnv("DB_NAME", "qrmenu_dev"),
 		DBSSLMode:        getEnv("DB_SSLMODE", "disable"),
+		DBMaxOpenConns:   dbMaxOpen,
+		DBMaxIdleConns:   dbMaxIdle,
+		DBConnMaxLifeSec: dbLife,
+		DBConnMaxIdleSec: dbIdle,
 		JWTSecret:        getEnv("JWT_SECRET", "dev_secret"),
 		JWTExpiresMinute: expInt,
 		AdminEmail:       getEnv("ADMIN_EMAIL", "admin@qrmenu.local"),
